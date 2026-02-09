@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+.text-shadow { text-shadow: 2px 2px 0px #000000; }
+.text-shadow-sm { text-shadow: 1px 1px 0px #000000; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+}
