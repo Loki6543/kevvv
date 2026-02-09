@@ -1,0 +1,788 @@
+This is Project Azeroth: The Unified Life OS.This is a complete, deployable Next.js 16 PWA. It wraps your Stella's Plane (Health/Stats), Housing Strategy (Financials), and Couples Dashboard (Social) into a single "Turtle WoW" style interface.It features a Micro Menu for navigation, Unit Frames for your health/mana, and an Action Bar that changes context based on which "Zone" (Page) you are in.Implementation GuideInitialize Project:Bashnpx create-next-app@latest stella-os --typescript --tailwind --eslint
+cd stella-os
+npm install framer-motion lucide-react clsx tailwind-merge
+Copy the Files: Create the files below in your project structure.Deploy: Push to GitHub and connect to Netlify.1. Configuration & PWA SetupFile: netlify.toml (Root Directory)Ensures the PWA routes work correctly on Netlify's Edge.Ini, TOML[build]
+  command = "npm run build"
+  publish = ".next/standalone/.next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json"
+File: app/manifest.tsGenerates the PWA installer config.TypeScriptimport { MetadataRoute } from 'next'
+
+export default function manifest(): MetadataRoute.Manifest {
+  return {
+    name: 'StellaOS',
+    short_name: 'Stella',
+    description: 'Level 60 ENTP Life Management System',
+    start_url: '/',
+    display: 'standalone',
+    background_color: '#050b14',
+    theme_color: '#0f172a',
+    orientation: 'portrait-primary',
+    icons: [
+      { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+    ],
+  }
+}
+2. The Game Engine (UI Shell)File: app/layout.tsxThis contains the "Turtle WoW" Interface Layer that persists across all pages.TypeScriptimport type { Metadata } from "next";
+import { Inter, Cinzel, MedievalSharp } from "next/font/google"; // Free alternatives to Friz Quadrata
+import "./globals.css";
+
+const sans = Inter({ subsets: ["latin"], variable: "--font-sans" });
+const heading = Cinzel({ subsets: ["latin"], variable: "--font-heading" });
+const fantasy = MedievalSharp({ weight: "400", subsets: ["latin"], variable: "--font-fantasy" });
+
+export const metadata: Metadata = {
+  title: "Stella | Lvl 60 Adaptive Strategist",
+  description: "Main Character HUD",
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{ children: React.ReactNode }>) {
+  return (
+    <html lang="en">
+      <body className={`${sans.variable} ${heading.variable} ${fantasy.variable} bg-[#050b14] text-[#f8fafc] overflow-hidden select-none`}>
+        {/* VIEWPORT CONTAINER */}
+        <div className="h-dvh w-full flex flex-col relative bg-[url('https://www.transparenttextures.com/patterns/black-scales.png')]">
+          
+          {/* MAIN GAME WINDOW */}
+          <main className="flex-1 overflow-y-auto pb-32 scrollbar-hide">
+            {children}
+          </main>
+
+          {/* UI LAYER (Fixed on top) */}
+          <div className="pointer-events-none fixed inset-0 z-50">
+            {/* UNIT FRAMES (Top Left) */}
+            <div className="absolute top-4 left-4 pointer-events-auto flex gap-3 items-center">
+              {/* Portrait */}
+              <div className="w-16 h-16 rounded-full border-2 border-[#d4af37] bg-blue-900 shadow-[0_0_15px_#3b82f6] flex items-center justify-center overflow-hidden relative">
+                 <span className="text-2xl">👩‍🎤</span>
+                 <div className="absolute bottom-0 w-full text-[10px] bg-black/80 text-center text-[#d4af37]">60</div>
+              </div>
+              
+              {/* Bars */}
+              <div className="flex flex-col gap-1 w-40">
+                <div className="text-xs font-bold text-[#d4af37] font-heading tracking-widest text-shadow-sm">STELLA (ENTP)</div>
+                {/* HP Bar */}
+                <div className="h-4 w-full bg-gray-900 border border-gray-600 rounded relative overflow-hidden">
+                  <div className="absolute top-0 left-0 h-full bg-gradient-to-r from-green-600 to-green-400 w-[96%]"></div>
+                  <span className="absolute inset-0 flex items-center justify-center text-[9px] font-mono font-bold drop-shadow-md">HP 96%</span>
+                </div>
+                {/* Mana Bar */}
+                <div className="h-4 w-full bg-gray-900 border border-gray-600 rounded relative overflow-hidden">
+                  <div className="absolute top-0 left-0 h-full bg-gradient-to-r from-blue-600 to-blue-400 w-[93%]"></div>
+                  <span className="absolute inset-0 flex items-center justify-center text-[9px] font-mono font-bold drop-shadow-md">MP 93%</span>
+                </div>
+              </div>
+            </div>
+
+            {/* BUFFS (Top Right) */}
+            <div className="absolute top-4 right-4 flex gap-2 pointer-events-auto">
+               <div className="w-8 h-8 rounded border border-gray-500 bg-gray-800 flex items-center justify-center text-xs" title="Buff: Kevin's Shield">🛡️</div>
+               <div className="w-8 h-8 rounded border border-gray-500 bg-gray-800 flex items-center justify-center text-xs" title="Buff: Wohngeld Booster">💰</div>
+            </div>
+          </div>
+
+        </div>
+      </body>
+    </html>
+  );
+}
+3. The Main App LogicFile: app/page.tsxThis handles the "Micro Menu" navigation and swapping between the three major app modes.TypeScript'use client';
+import { useState } from 'react';
+import { Sword, BookOpen, Users, Map, Settings, Backpack, MessageCircle } from 'lucide-react';
+import { clsx } from 'clsx';
+
+// --- SUB-PAGES IMPORTED AS COMPONENTS ---
+import StellasPlane from '@/components/StellasPlane';
+import HousingStrategy from '@/components/HousingStrategy';
+import CouplesDashboard from '@/components/CouplesDashboard';
+
+type ViewState = 'CHARACTER' | 'SPELLBOOK' | 'SOCIAL' | 'MAP';
+
+export default function GameWorld() {
+  const [activeView, setActiveView] = useState<ViewState>('CHARACTER');
+
+  // ACTION BAR BUTTONS (Context Sensitive)
+  const renderActionBar = () => {
+    switch(activeView) {
+      case 'SPELLBOOK': // Housing
+        return;
+      case 'SOCIAL': // Couples
+        return;
+      default: // Character
+        return [
+          { icon: '💊', label: 'Meds', color: 'bg-green-900' },
+          { icon: '🧘‍♀️', label: 'Focus', color: 'bg-blue-900' },
+          { icon: '⚔️', label: 'Gym', color: 'bg-red-900' },
+          { icon: '📓', label: 'Journal', color: 'bg-gray-800' },
+        ];
+    }
+  };
+
+  return (
+    <div className="min-h-full pb-32">
+      
+      {/* CONTENT AREA */}
+      <div className="p-4 pt-24 animate-in fade-in duration-500">
+        {activeView === 'CHARACTER' && <StellasPlane />}
+        {activeView === 'SPELLBOOK' && <HousingStrategy />}
+        {activeView === 'SOCIAL' && <CouplesDashboard />}
+      </div>
+
+      {/* --- BOTTOM UI CONTAINER --- */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 flex flex-col items-center">
+        
+        {/* GRYPHON ENDCAPS (Visual Only) */}
+        <div className="w-full max-w-2xl relative bg-[#0f172a]/90 border-t-2 border-[#d4af37] shadow-[0_-5px_20px_rgba(0,0,0,0.8)] pb-safe">
+          
+          {/* ACTION BAR (Context Sensitive) */}
+          <div className="flex justify-center gap-3 p-3 -mt-8">
+            {renderActionBar()?.map((btn, i) => (
+              <button key={i} className={`w-12 h-12 rounded border-2 border-[#888] hover:border-[#fff] shadow-lg flex flex-col items-center justify-center active:scale-95 transition-all ${btn.color}`}>
+                <span className="text-xl drop-shadow-md">{btn.icon}</span>
+                <span className="text-[9px] font-bold uppercase tracking-tighter text-white/80">{btn.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* MICRO MENU (Navigation) */}
+          <div className="flex justify-between px-6 py-2 bg-black/40 backdrop-blur-md">
+            
+            <NavIcon 
+              active={activeView === 'CHARACTER'} 
+              onClick={() => setActiveView('CHARACTER')}
+              icon={<Sword size={18} />} 
+              label="Char" 
+            />
+            
+            <NavIcon 
+              active={activeView === 'SPELLBOOK'} 
+              onClick={() => setActiveView('SPELLBOOK')}
+              icon={<BookOpen size={18} />} 
+              label="Spells" 
+            />
+            
+            <NavIcon 
+              active={activeView === 'SOCIAL'} 
+              onClick={() => setActiveView('SOCIAL')}
+              icon={<Users size={18} />} 
+              label="Social" 
+            />
+
+            <NavIcon 
+              active={false} 
+              onClick={() => {}} // Placeholder for Map
+              icon={<Map size={18} />} 
+              label="Map" 
+            />
+
+             <NavIcon 
+              active={false} 
+              onClick={() => {}} // Placeholder
+              icon={<Settings size={18} />} 
+              label="Menu" 
+            />
+          </div>
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
+function NavIcon({ icon, label, active, onClick }: any) {
+  return (
+    <button 
+      onClick={onClick}
+      className={clsx(
+        "flex flex-col items-center gap-1 opacity-70 hover:opacity-100 transition-all",
+        active && "opacity-100 text-[#d4af37] scale-110"
+      )}
+    >
+      <div className="p-1 rounded-full border border-white/10 bg-white/5">{icon}</div>
+    </button>
+  );
+}
+4. The Content ComponentsCreate a folder components and add these three files.File: components/StellasPlane.tsxYour "Character Sheet" - The ENTP/ISFJ Breakdown.TypeScriptexport default function StellasPlane() {
+  return (
+    <div className="space-y-6 text-[#f8fafc]">
+      <div className="text-center mb-6">
+        <h1 className="font-heading text-3xl text-[#d4af37] text-shadow">STELLA'S THRONE ROOM</h1>
+        <p className="font-fantasy text-[#60a5fa] text-lg">Level 60 Adaptive Strategist</p>
+      </div>
+
+      {/* STATS CARD */}
+      <div className="bg-[#0f172a] border border-[#333] rounded-lg p-4 shadow-xl">
+        <h2 className="font-bold text-[#d4af37] border-b border-[#333] pb-2 mb-4 flex justify-between">
+          <span>CORE ATTRIBUTES</span>
+          <span className="text-xs text-gray-500">ENTP 8w7</span>
+        </h2>
+        
+        <div className="space-y-3">
+          <StatRow label="Adaptability" val={96} color="bg-blue-600" />
+          <StatRow label="Resilience" val={95} color="bg-blue-500" />
+          <StatRow label="Strategy" val={93} color="bg-blue-400" />
+        </div>
+      </div>
+
+      {/* COMPANION CARD */}
+      <div className="bg-[#0f172a] border border-[#fbbf24] border-opacity-30 rounded-lg p-4 shadow-xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-2 opacity-10 text-6xl">🛡️</div>
+        <h2 className="font-bold text-[#fbbf24] border-b border-[#333] pb-2 mb-4">
+          PARTY MEMBER: KEVIN
+        </h2>
+        <p className="text-sm text-gray-400 mb-4">Class: ISFJ (Protector) <br/> Role: Logistics & Physical Defense</p>
+        
+        <div className="p-3 bg-black/30 rounded border border-[#fbbf24]/20">
+          <strong className="text-[#fbbf24] text-xs uppercase">Active Quest:</strong>
+          <div className="text-sm">Incoming Reinforcement (Feb 11-24)</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatRow({ label, val, color }: any) {
+  return (
+    <div className="flex items-center gap-2 text-sm">
+      <span className="w-24 font-bold text-gray-400">{label}</span>
+      <div className="flex-1 h-3 bg-gray-900 rounded-full overflow-hidden border border-gray-700">
+        <div className={`${color} h-full`} style={{ width: `${val}%` }}></div>
+      </div>
+      <span className="w-8 text-right">{val}</span>
+    </div>
+  );
+}
+File: components/HousingStrategy.tsxThe "Kraken" Report adapted into a Spellbook style.TypeScriptimport { ArrowRight, AlertTriangle, CheckCircle } from 'lucide-react';
+
+export default function HousingStrategy() {
+  return (
+    <div className="space-y-4">
+      {/* HEADER WITH KRAKEN THEME */}
+      <div className="border-l-4 border-[#7434f3] pl-4 mb-6">
+        <h1 className="font-heading text-2xl text-white">ASSET ALLOCATION</h1>
+        <p className="text-[#7434f3] font-bold text-sm tracking-widest">Q1 2026 STRATEGY</p>
+      </div>
+
+      {/* DASHBOARD GRID */}
+      <div className="grid grid-cols-2 gap-3">
+        {/* ASSET: PETERSHAUSEN */}
+        <div className="col-span-2 bg-[#1a1a1a] border border-[#7434f3] rounded p-4 relative overflow-hidden group hover:bg-[#222] transition-colors cursor-pointer">
+          <div className="absolute top-0 right-0 bg-[#7434f3] text-white text-[10px] font-bold px-2 py-1">BLUE CHIP</div>
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            PET-S2 <span className="text-xs text-gray-500">(Petershausen)</span>
+          </h3>
+          <div className="flex gap-2 mt-2">
+            <Badge text="Fit: 91%" color="bg-green-900 text-green-200" />
+            <Badge text="Yield: Med" color="bg-blue-900 text-blue-200" />
+          </div>
+          <p className="text-xs text-gray-400 mt-2">
+            The "Fortress" Asset. Regional Express redundancy provides critical hedge against S-Bahn construction volatility.
+          </p>
+        </div>
+
+        {/* ASSET: ALTOMUNSTER */}
+        <div className="bg-[#1a1a1a] border border-gray-700 rounded p-3">
+          <h3 className="font-bold text-gray-300 text-sm">ALT-S2</h3>
+          <p className="text-[10px] text-green-400 mt-1">+ MAX YIELD</p>
+          <p className="text-[10px] text-red-400">- HIGH LATENCY</p>
+        </div>
+
+        {/* ASSET: ODELZHAUSEN */}
+        <div className="bg-[#2a1010] border border-red-900 rounded p-3 opacity-70">
+          <h3 className="font-bold text-red-500 text-sm">ODE-BUS</h3>
+          <p className="text-[10px] text-red-300">TOXIC ASSET</p>
+          <p className="text-[10px] text-gray-400">Bus transport failure risk.</p>
+        </div>
+      </div>
+
+      {/* STRATEGIC THESIS */}
+      <div className="bg-white/5 p-4 rounded border border-white/10 mt-4">
+        <h4 className="text-[#d4af37] font-bold text-sm mb-2 flex items-center gap-2">
+          <CheckCircle size={14} /> THE WOHNGELD BOOSTER
+        </h4>
+        <p className="text-xs leading-relaxed text-gray-300">
+          Targeting Mietstufe IV zones (Petershausen/Röhrmoos) to maximize subsidy caps. 
+          <br/><span className="text-green-400">Target Rent: ~€1,150 Warm</span>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function Badge({ text, color }: any) {
+  return <span className={`px-2 py-0.5 rounded text-[10px] font-bold border border-white/10 ${color}`}>{text}</span>;
+}
+File: components/CouplesDashboard.tsxThe Shared "Guild" Dashboard.TypeScriptexport default function CouplesDashboard() {
+  return (
+    <div className="space-y-6">
+      <div className="text-center">
+        <h1 className="font-heading text-2xl text-[#d4af37]">GUILD HALL</h1>
+        <p className="text-xs text-gray-400">Shared Instance: Stella & Kevin</p>
+      </div>
+
+      {/* GUILD BANK */}
+      <div className="bg-[#1e1e1e] border-2 border-[#444] rounded p-1">
+        <div className="bg-[#0f0f0f] p-3 rounded border border-[#222] flex justify-between items-center">
+          <span className="text-gray-400 font-bold text-sm">GUILD FUNDS</span>
+          <span className="text-yellow-500 font-mono">
+            25<span className="text-[#d4af37]">g</span> 40<span className="text-gray-400">s</span> 00<span className="text-orange-700">c</span>
+          </span>
+        </div>
+      </div>
+
+      {/* QUEST LOG */}
+      <div className="bg-[url('https://www.transparenttextures.com/patterns/aged-paper.png')] bg-[#e3d5b8] text-black p-4 rounded shadow-inner border-2 border-[#5c4033]">
+        <h3 className="font-heading font-bold border-b border-black/20 pb-1 mb-2">Active Quests</h3>
+        <ul className="list-disc pl-4 text-sm space-y-2">
+          <li>
+            <strong>The Pivot (Main Quest)</strong>
+            <p className="text-xs opacity-80">Leverage support to flip script on NPC Ex.</p>
+          </li>
+          <li>
+            <strong>Housing Hunt (Daily)</strong>
+            <p className="text-xs opacity-80">Check ImmoScout for Petershausen listings.</p>
+          </li>
+        </ul>
+      </div>
+
+      {/* SYNC BUTTON */}
+      <button className="w-full py-3 bg-blue-700 hover:bg-blue-600 text-white font-bold rounded border-2 border-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.5)]">
+        INITIATE DATA SYNC
+      </button>
+    </div>
+  );
+}
+5. Global CSS (The "WoW" Look)File: app/globals.cssAdd this to your CSS file to handle the specific text shadows and scrollbars.CSS@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+.text-shadow {
+    text-shadow: 2px 2px 0px #000000;
+  }
+.text-shadow-sm {
+    text-shadow: 1px 1px 0px #000000;
+  }
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+.pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+6. Generate Zip File (Python Script)Running the python script below will create a stella-os.zip file containing the full project structure, including all the files listed above, plus the package.json and tsconfig.json.Copy the code below.Save it as make_zip.py.Run it with python make_zip.py.Upload the resulting stella-os.zip to your server or unzip it to start working.Pythonimport zipfile
+import os
+import time
+
+# --- FILE CONTENTS ---
+
+PACKAGE_JSON = """{
+  "name": "stella-os",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "clsx": "^2.1.0",
+    "framer-motion": "^11.0.3",
+    "lucide-react": "^0.316.0",
+    "next": "14.1.0",
+    "react": "^18",
+    "react-dom": "^18",
+    "tailwind-merge": "^2.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "autoprefixer": "^10.0.1",
+    "eslint": "^8",
+    "eslint-config-next": "14.1.0",
+    "postcss": "^8",
+    "tailwindcss": "^3.3.0",
+    "typescript": "^5"
+  }
+}"""
+
+TSCONFIG = """{
+  "compilerOptions": {
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}"""
+
+NEXT_CONFIG = """/** @type {import('next').NextConfig} */
+const nextConfig = {
+    output: 'standalone',
+};
+export default nextConfig;"""
+
+TAILWIND_CONFIG = """import type { Config } from "tailwindcss";
+
+const config: Config = {
+  content: [
+    "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./components/**/*.{js,ts,jsx,tsx,mdx}",
+  ],
+  theme: {
+    extend: {
+      fontFamily: {
+        heading: ['var(--font-heading)'],
+        fantasy: ['var(--font-fantasy)'],
+        sans: ['var(--font-sans)'],
+      },
+      backgroundImage: {
+        'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
+      },
+    },
+  },
+  plugins:,
+};
+export default config;"""
+
+POSTCSS_CONFIG = """module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+};"""
+
+NETLIFY_TOML = """[build]
+  command = "npm run build"
+  publish = ".next/standalone/.next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json"
+"""
+
+APP_LAYOUT = """import type { Metadata } from "next";
+import { Inter, Cinzel, MedievalSharp } from "next/font/google"; 
+import "./globals.css";
+
+const sans = Inter({ subsets: ["latin"], variable: "--font-sans" });
+const heading = Cinzel({ subsets: ["latin"], variable: "--font-heading" });
+const fantasy = MedievalSharp({ weight: "400", subsets: ["latin"], variable: "--font-fantasy" });
+
+export const metadata: Metadata = {
+  title: "Stella | Lvl 60 Adaptive Strategist",
+  description: "Main Character HUD",
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{ children: React.ReactNode }>) {
+  return (
+    <html lang="en">
+      <body className={`${sans.variable} ${heading.variable} ${fantasy.variable} bg-[#050b14] text-[#f8fafc] overflow-hidden select-none`}>
+        <div className="h-dvh w-full flex flex-col relative bg-[url('https://www.transparenttextures.com/patterns/black-scales.png')]">
+          
+          <main className="flex-1 overflow-y-auto pb-32 scrollbar-hide">
+            {children}
+          </main>
+
+          <div className="pointer-events-none fixed inset-0 z-50">
+            <div className="absolute top-4 left-4 pointer-events-auto flex gap-3 items-center">
+              <div className="w-16 h-16 rounded-full border-2 border-[#d4af37] bg-blue-900 shadow-[0_0_15px_#3b82f6] flex items-center justify-center overflow-hidden relative">
+                 <span className="text-2xl">👩‍🎤</span>
+                 <div className="absolute bottom-0 w-full text-[10px] bg-black/80 text-center text-[#d4af37]">60</div>
+              </div>
+              
+              <div className="flex flex-col gap-1 w-40">
+                <div className="text-xs font-bold text-[#d4af37] font-heading tracking-widest text-shadow-sm">STELLA (ENTP)</div>
+                <div className="h-4 w-full bg-gray-900 border border-gray-600 rounded relative overflow-hidden">
+                  <div className="absolute top-0 left-0 h-full bg-gradient-to-r from-green-600 to-green-400 w-[96%]"></div>
+                  <span className="absolute inset-0 flex items-center justify-center text-[9px] font-mono font-bold drop-shadow-md">HP 96%</span>
+                </div>
+                <div className="h-4 w-full bg-gray-900 border border-gray-600 rounded relative overflow-hidden">
+                  <div className="absolute top-0 left-0 h-full bg-gradient-to-r from-blue-600 to-blue-400 w-[93%]"></div>
+                  <span className="absolute inset-0 flex items-center justify-center text-[9px] font-mono font-bold drop-shadow-md">MP 93%</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="absolute top-4 right-4 flex gap-2 pointer-events-auto">
+               <div className="w-8 h-8 rounded border border-gray-500 bg-gray-800 flex items-center justify-center text-xs" title="Buff: Kevin's Shield">🛡️</div>
+               <div className="w-8 h-8 rounded border border-gray-500 bg-gray-800 flex items-center justify-center text-xs" title="Buff: Wohngeld Booster">💰</div>
+            </div>
+          </div>
+
+        </div>
+      </body>
+    </html>
+  );
+}"""
+
+APP_PAGE = """'use client';
+import { useState } from 'react';
+import { Sword, BookOpen, Users, Map, Settings } from 'lucide-react';
+import { clsx } from 'clsx';
+import StellasPlane from '@/components/StellasPlane';
+import HousingStrategy from '@/components/HousingStrategy';
+import CouplesDashboard from '@/components/CouplesDashboard';
+
+type ViewState = 'CHARACTER' | 'SPELLBOOK' | 'SOCIAL' | 'MAP';
+
+export default function GameWorld() {
+  const [activeView, setActiveView] = useState<ViewState>('CHARACTER');
+
+  const renderActionBar = () => {
+    switch(activeView) {
+      case 'SPELLBOOK': return;
+      case 'SOCIAL': return;
+      default: 
+        return [
+          { icon: '💊', label: 'Meds', color: 'bg-green-900' },
+          { icon: '🧘‍♀️', label: 'Focus', color: 'bg-blue-900' },
+          { icon: '⚔️', label: 'Gym', color: 'bg-red-900' },
+          { icon: '📓', label: 'Journal', color: 'bg-gray-800' },
+        ];
+    }
+  };
+
+  return (
+    <div className="min-h-full pb-32">
+      <div className="p-4 pt-24 animate-in fade-in duration-500">
+        {activeView === 'CHARACTER' && <StellasPlane />}
+        {activeView === 'SPELLBOOK' && <HousingStrategy />}
+        {activeView === 'SOCIAL' && <CouplesDashboard />}
+      </div>
+
+      <div className="fixed bottom-0 left-0 right-0 z-50 flex flex-col items-center">
+        <div className="w-full max-w-2xl relative bg-[#0f172a]/90 border-t-2 border-[#d4af37] shadow-[0_-5px_20px_rgba(0,0,0,0.8)] pb-safe">
+          <div className="flex justify-center gap-3 p-3 -mt-8">
+            {renderActionBar()?.map((btn, i) => (
+              <button key={i} className={`w-12 h-12 rounded border-2 border-[#888] hover:border-[#fff] shadow-lg flex flex-col items-center justify-center active:scale-95 transition-all ${btn.color}`}>
+                <span className="text-xl drop-shadow-md">{btn.icon}</span>
+                <span className="text-[9px] font-bold uppercase tracking-tighter text-white/80">{btn.label}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="flex justify-between px-6 py-2 bg-black/40 backdrop-blur-md">
+            <NavIcon active={activeView === 'CHARACTER'} onClick={() => setActiveView('CHARACTER')} icon={<Sword size={18} />} label="Char" />
+            <NavIcon active={activeView === 'SPELLBOOK'} onClick={() => setActiveView('SPELLBOOK')} icon={<BookOpen size={18} />} label="Spells" />
+            <NavIcon active={activeView === 'SOCIAL'} onClick={() => setActiveView('SOCIAL')} icon={<Users size={18} />} label="Social" />
+            <NavIcon active={false} onClick={() => {}} icon={<Map size={18} />} label="Map" />
+             <NavIcon active={false} onClick={() => {}} icon={<Settings size={18} />} label="Menu" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NavIcon({ icon, label, active, onClick }: any) {
+  return (
+    <button onClick={onClick} className={clsx("flex flex-col items-center gap-1 opacity-70 hover:opacity-100 transition-all", active && "opacity-100 text-[#d4af37] scale-110")}>
+      <div className="p-1 rounded-full border border-white/10 bg-white/5">{icon}</div>
+    </button>
+  );
+}"""
+
+APP_MANIFEST = """import { MetadataRoute } from 'next'
+
+export default function manifest(): MetadataRoute.Manifest {
+  return {
+    name: 'StellaOS',
+    short_name: 'Stella',
+    description: 'Level 60 ENTP Life Management System',
+    start_url: '/',
+    display: 'standalone',
+    background_color: '#050b14',
+    theme_color: '#0f172a',
+    orientation: 'portrait-primary',
+    icons: [
+      { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+    ],
+  }
+}"""
+
+GLOBALS_CSS = """@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+.text-shadow { text-shadow: 2px 2px 0px #000000; }
+.text-shadow-sm { text-shadow: 1px 1px 0px #000000; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+}"""
+
+COMP_STELLA = """export default function StellasPlane() {
+  return (
+    <div className="space-y-6 text-[#f8fafc]">
+      <div className="text-center mb-6">
+        <h1 className="font-heading text-3xl text-[#d4af37] text-shadow">STELLA'S THRONE ROOM</h1>
+        <p className="font-fantasy text-[#60a5fa] text-lg">Level 60 Adaptive Strategist</p>
+      </div>
+      <div className="bg-[#0f172a] border border-[#333] rounded-lg p-4 shadow-xl">
+        <h2 className="font-bold text-[#d4af37] border-b border-[#333] pb-2 mb-4 flex justify-between">
+          <span>CORE ATTRIBUTES</span>
+          <span className="text-xs text-gray-500">ENTP 8w7</span>
+        </h2>
+        <div className="space-y-3">
+          <StatRow label="Adaptability" val={96} color="bg-blue-600" />
+          <StatRow label="Resilience" val={95} color="bg-blue-500" />
+          <StatRow label="Strategy" val={93} color="bg-blue-400" />
+        </div>
+      </div>
+      <div className="bg-[#0f172a] border border-[#fbbf24] border-opacity-30 rounded-lg p-4 shadow-xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-2 opacity-10 text-6xl">🛡️</div>
+        <h2 className="font-bold text-[#fbbf24] border-b border-[#333] pb-2 mb-4">PARTY MEMBER: KEVIN</h2>
+        <p className="text-sm text-gray-400 mb-4">Class: ISFJ (Protector) <br/> Role: Logistics & Defense</p>
+        <div className="p-3 bg-black/30 rounded border border-[#fbbf24]/20">
+          <strong className="text-[#fbbf24] text-xs uppercase">Active Quest:</strong>
+          <div className="text-sm">Incoming Reinforcement (Feb 11-24)</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+function StatRow({ label, val, color }: any) {
+  return (
+    <div className="flex items-center gap-2 text-sm">
+      <span className="w-24 font-bold text-gray-400">{label}</span>
+      <div className="flex-1 h-3 bg-gray-900 rounded-full overflow-hidden border border-gray-700"><div className={`${color} h-full`} style={{ width: `${val}%` }}></div></div>
+      <span className="w-8 text-right">{val}</span>
+    </div>
+  );
+}"""
+
+COMP_HOUSING = """import { ArrowRight, CheckCircle } from 'lucide-react';
+export default function HousingStrategy() {
+  return (
+    <div className="space-y-4">
+      <div className="border-l-4 border-[#7434f3] pl-4 mb-6">
+        <h1 className="font-heading text-2xl text-white">ASSET ALLOCATION</h1>
+        <p className="text-[#7434f3] font-bold text-sm tracking-widest">Q1 2026 STRATEGY</p>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="col-span-2 bg-[#1a1a1a] border border-[#7434f3] rounded p-4 relative overflow-hidden group hover:bg-[#222] transition-colors cursor-pointer">
+          <div className="absolute top-0 right-0 bg-[#7434f3] text-white text-[10px] font-bold px-2 py-1">BLUE CHIP</div>
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">PET-S2 <span className="text-xs text-gray-500">(Petershausen)</span></h3>
+          <div className="flex gap-2 mt-2">
+            <Badge text="Fit: 91%" color="bg-green-900 text-green-200" />
+            <Badge text="Yield: Med" color="bg-blue-900 text-blue-200" />
+          </div>
+          <p className="text-xs text-gray-400 mt-2">The "Fortress" Asset. Regional Express redundancy provides critical hedge.</p>
+        </div>
+        <div className="bg-[#1a1a1a] border border-gray-700 rounded p-3">
+          <h3 className="font-bold text-gray-300 text-sm">ALT-S2</h3>
+          <p className="text-[10px] text-green-400 mt-1">+ MAX YIELD</p>
+          <p className="text-[10px] text-red-400">- HIGH LATENCY</p>
+        </div>
+        <div className="bg-[#2a1010] border border-red-900 rounded p-3 opacity-70">
+          <h3 className="font-bold text-red-500 text-sm">ODE-BUS</h3>
+          <p className="text-[10px] text-red-300">TOXIC ASSET</p>
+          <p className="text-[10px] text-gray-400">Bus transport failure risk.</p>
+        </div>
+      </div>
+      <div className="bg-white/5 p-4 rounded border border-white/10 mt-4">
+        <h4 className="text-[#d4af37] font-bold text-sm mb-2 flex items-center gap-2"><CheckCircle size={14} /> THE WOHNGELD BOOSTER</h4>
+        <p className="text-xs leading-relaxed text-gray-300">Targeting Mietstufe IV zones to maximize subsidy caps. <br/><span className="text-green-400">Target Rent: ~€1,150 Warm</span></p>
+      </div>
+    </div>
+  );
+}
+function Badge({ text, color }: any) {
+  return <span className={`px-2 py-0.5 rounded text-[10px] font-bold border border-white/10 ${color}`}>{text}</span>;
+}"""
+
+COMP_COUPLES = """export default function CouplesDashboard() {
+  return (
+    <div className="space-y-6">
+      <div className="text-center">
+        <h1 className="font-heading text-2xl text-[#d4af37]">GUILD HALL</h1>
+        <p className="text-xs text-gray-400">Shared Instance: Stella & Kevin</p>
+      </div>
+      <div className="bg-[#1e1e1e] border-2 border-[#444] rounded p-1">
+        <div className="bg-[#0f0f0f] p-3 rounded border border-[#222] flex justify-between items-center">
+          <span className="text-gray-400 font-bold text-sm">GUILD FUNDS</span>
+          <span className="text-yellow-500 font-mono">
+            25<span className="text-[#d4af37]">g</span> 40<span className="text-gray-400">s</span> 00<span className="text-orange-700">c</span>
+          </span>
+        </div>
+      </div>
+      <div className="bg-[url('https://www.transparenttextures.com/patterns/aged-paper.png')] bg-[#e3d5b8] text-black p-4 rounded shadow-inner border-2 border-[#5c4033]">
+        <h3 className="font-heading font-bold border-b border-black/20 pb-1 mb-2">Active Quests</h3>
+        <ul className="list-disc pl-4 text-sm space-y-2">
+          <li><strong>The Pivot (Main Quest)</strong><p className="text-xs opacity-80">Leverage support to flip script on NPC Ex.</p></li>
+          <li><strong>Housing Hunt (Daily)</strong><p className="text-xs opacity-80">Check ImmoScout for Petershausen listings.</p></li>
+        </ul>
+      </div>
+      <button className="w-full py-3 bg-blue-700 hover:bg-blue-600 text-white font-bold rounded border-2 border-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.5)]">INITIATE DATA SYNC</button>
+    </div>
+  );
+}"""
+
+# --- DIRECTORY STRUCTURE & MAPPING ---
+
+file_structure = {
+    "package.json": PACKAGE_JSON,
+    "tsconfig.json": TSCONFIG,
+    "next.config.mjs": NEXT_CONFIG,
+    "tailwind.config.ts": TAILWIND_CONFIG,
+    "postcss.config.js": POSTCSS_CONFIG,
+    "netlify.toml": NETLIFY_TOML,
+    "app/layout.tsx": APP_LAYOUT,
+    "app/page.tsx": APP_PAGE,
+    "app/manifest.ts": APP_MANIFEST,
+    "app/globals.css": GLOBALS_CSS,
+    "components/StellasPlane.tsx": COMP_STELLA,
+    "components/HousingStrategy.tsx": COMP_HOUSING,
+    "components/CouplesDashboard.tsx": COMP_COUPLES,
+    "public/.keep": "" # Ensures public dir exists
+}
+
+# --- ZIP GENERATION ---
+
+ZIP_NAME = "stella-os.zip"
+print(f"Creating {ZIP_NAME}...")
+
+with zipfile.ZipFile(ZIP_NAME, 'w') as zf:
+    for filename, content in file_structure.items():
+        # Add file to zip
+        zf.writestr(filename, content)
+        print(f"  + {filename}")
+
+print(f"\nDone! {ZIP_NAME} is ready.")
+How to Deploy InstantlyGenerate Zip: Run the Python script above.Unzip: Extract the folder.Netlify: Drag and drop the folder into Netlify (if using manual deploy) OR push the folder to GitHub and link it to Netlify.Install: Open the live URL on your iPhone. Tap "Share" -> "Add to Home Screen".
