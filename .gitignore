@@ -11,3 +11,5 @@ dist/
 .env.production.local
 .vercel
 .cache
+stella-os/
+stella-os.zip
