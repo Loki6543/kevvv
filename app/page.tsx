@@ -60,10 +60,11 @@ function GameWorld() {
   );
 }
 
-function NavIcon({ icon, label, active, onClick }: any) {
+function NavIcon({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick} className={clsx("flex flex-col items-center gap-1 opacity-70 hover:opacity-100 transition-all", active && "opacity-100 text-[#d4af37] scale-110")}>
       <div className="p-1 rounded-full border border-white/10 bg-white/5">{icon}</div>
+      <span className="text-[9px] font-bold uppercase tracking-tight">{label}</span>
     </button>
   );
 }
